@@ -28,13 +28,14 @@ def extract_channel(product_name):
 
 
 def dominant_channel(channels):
+    if hasattr(channels, "tolist"):
+        channels = channels.tolist()
     if not channels:
         return "UNKNOWN"
     counts = {}
     for c in channels:
         counts[c] = counts.get(c, 0) + 1
-    best = max(counts, key=counts.get)
-    return best if counts[best] > 0 else "UNKNOWN"
+    return max(counts, key=counts.get)
 
 
 def main():
@@ -68,8 +69,8 @@ def main():
     menu = (
         items.groupby("product_id")
         .agg(
-            product_name=("product_name", lambda s: s.mode().iloc[0] if len(s) > 0 else ""),
-            category    =("category",     lambda s: s.mode().iloc[0] if len(s) > 0 else ""),
+            product_name=("product_name", lambda s: s.mode().iloc[0] if not s.mode().empty else ""),
+            category    =("category",     lambda s: s.mode().iloc[0] if not s.mode().empty else ""),
             channel     =("channel",      lambda s: s.mode().iloc[0] if len(s) > 0 else "UNKNOWN"),
             n_sold      =("quantity",     "sum"),
             avg_price_pkr=("unit_price",  "mean"),
@@ -100,10 +101,10 @@ def main():
     for ch in ["EAT IN", "EAT OUT", "DRIVE THRU", "DELIVERY"]:
         col = "pct_" + ch.lower().replace(" ", "_")
         summary[col] = summary["store_id"].map(
-            txns.groupby("store_id").apply(lambda g: (g["channel"] == ch).mean())
+            txns.groupby("store_id")["channel"].apply(lambda g: (g == ch).mean())
         )
     summary["pct_unknown_channel"] = summary["store_id"].map(
-        txns.groupby("store_id").apply(lambda g: (g["channel"] == "UNKNOWN").mean())
+        txns.groupby("store_id")["channel"].apply(lambda g: (g == "UNKNOWN").mean())
     )
 
     summary_path = os.path.join(DATA_DIR, "store_summary.csv")
@@ -133,8 +134,8 @@ def main():
         "n_stores":             int(txns["store_id"].nunique()),
         "n_unique_skus":        int(items["product_id"].nunique()),
         "date_range": {
-            "earliest": str(txns["date"].min()) if "date" in txns.columns else None,
-            "latest":   str(txns["date"].max()) if "date" in txns.columns else None,
+            "earliest": str(txns["date"].dropna().min()) if "date" in txns.columns else None,
+            "latest":   str(txns["date"].dropna().max()) if "date" in txns.columns else None,
         },
         "basket_value": {
             "mean": float(txns["basket_value"].mean()),
