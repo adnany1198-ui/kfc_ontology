@@ -2,13 +2,14 @@
 KFC Pakistan AI Prototype — query and chart helpers.
 
 Usage:
-  from tools.kfc_tools import describe_schema, run_sql, list_stores, sample_rows, chart
+  from tools.kfc_tools import describe_schema, run_sql, list_stores, sample_rows, chart, show_architecture
 
 CLI:
   python tools/kfc_tools.py schema [table]
   python tools/kfc_tools.py stores
   python tools/kfc_tools.py sample TABLE [n]
   python tools/kfc_tools.py sql 'SELECT ...'
+  python tools/kfc_tools.py architecture
 """
 import os
 import sys
@@ -164,6 +165,124 @@ def chart(query, kind, title, x, y, filename):
     return out_path
 
 
+def show_architecture():
+    """
+    Print a structured ASCII map of the KFC Pakistan ontology with live row counts.
+    Triggered by 'show architecture' or 'what's in the system'.
+    """
+    counts = {}
+    try:
+        con = _connect()
+        for tbl in ["pos_transactions", "pos_line_items", "menu_items",
+                    "store_summary", "prism_observations",
+                    "inventory_movements", "procurement_prices"]:
+            try:
+                counts[tbl] = con.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
+            except Exception:
+                counts[tbl] = "N/A"
+        con.close()
+    except Exception:
+        counts = {t: "?" for t in ["pos_transactions", "pos_line_items", "menu_items",
+                                    "store_summary", "prism_observations",
+                                    "inventory_movements", "procurement_prices"]}
+
+    def rc(tbl):
+        v = counts.get(tbl, "?")
+        return f"{v:>9,}" if isinstance(v, int) else f"{v:>9}"
+
+    W = 78  # characters between the outer box borders
+
+    def L(text=""):
+        t = f"  {text}"
+        return f"║{t:<{W}}║"
+
+    def T(name, tbl_key, desc):
+        combined = f"    {name:<22}{rc(tbl_key)}  rows  {desc}"
+        return f"║  {combined:<{W-2}}║"
+
+    def D(label=""):
+        if label:
+            rest = W - len(label) - 4
+            return f"╠═ {label} {'═' * rest}╣"
+        return f"╠{'═' * W}╣"
+
+    rows = [
+        f"╔═ KFC PAKISTAN — OPERATIONAL INTELLIGENCE ARCHITECTURE {'═' * 21}╗",
+        D("LAYER 1 · CORE OBJECTS  —  the substrate"),
+        L(),
+        L("● REAL  (live · Railway POS receiver · growing continuously)"),
+        T("pos_transactions",   "pos_transactions",   "basket-level · one row per sale"),
+        T("pos_line_items",     "pos_line_items",     "one row per SKU per transaction"),
+        T("menu_items",         "menu_items",         "unique SKU catalogue"),
+        T("store_summary",      "store_summary",      "per-store rollup · 34 stores"),
+        L(),
+        L("○ SYNTHETIC  (anchored to real POS via transaction_id + store_id)"),
+        T("prism_observations",  "prism_observations",  "CV demographics · age/gender/group/dwell"),
+        L("                                              70% match rate · seed 42 · directional"),
+        T("inventory_movements", "inventory_movements", "daily stock/waste · top-30 SKU per store"),
+        T("procurement_prices",  "procurement_prices",  "weekly commodity prices · 6 inputs"),
+        L("                                              poultry +32% & oil +25% shocks baked in"),
+        L(),
+        D("LAYER 2 · DERIVED OBJECTS  —  computed on demand in SQL"),
+        L(),
+        L("  EnrichedTransaction   pos_transactions  ⨩  prism_observations"),
+        L("  ChannelMargin         pos_line_items    ⨩  food cost ratios by category"),
+        L("  OperatorPerformance   pos_transactions  GROUP BY operator_id"),
+        L("  HourlyDemand          pos_transactions  GROUP BY store_id, hour"),
+        L("  WasteAttribution      inventory_movements  →  store / category rollup"),
+        L("  ExposureForecast      procurement_prices   →  commodity shock modelling"),
+        L(),
+        D("LAYER 3 · PARAMETRIC MODELS  —  the simulator"),
+        L(),
+        L("  ThroughputModel    How many transactions/hr can a store handle?"),
+        L("    └─ ripples ▶  LabourModel"),
+        L(),
+        L("  MarginModel        Gross margin given basket mix and food costs?"),
+        L("    └─ (terminal)"),
+        L(),
+        L("  DemandShockModel   What if poultry / oil prices spike by X%?"),
+        L("    └─ ripples ▶  MarginModel  ·  ChannelMixModel"),
+        L(),
+        L("  LabourModel        Optimal staffing given an hourly demand curve?"),
+        L("    └─ (terminal)"),
+        L(),
+        L("  WasteRecoveryModel PKR value of improving waste log compliance?"),
+        L("    └─ (terminal)"),
+        L(),
+        L("  ChannelMixModel    Impact of shifting Foodpanda → own delivery?"),
+        L("    └─ ripples ▶  LabourModel  ·  ThroughputModel"),
+        L(),
+        L("  PromotionModel     Net P&L impact of discounting a SKU?"),
+        L("    └─ ripples ▶  MarginModel  ·  ThroughputModel"),
+        L(),
+        D("THE FLOW  —  how a question moves through the layers"),
+        L(),
+        L("  Question"),
+        L("     │"),
+        L("     ▼"),
+        L("  [1] SUBSTRATE QUERY ────────── historical / count questions stop here"),
+        L("     │"),
+        L("     ▼"),
+        L("  [2] DERIVED JOIN ────── cross-table analysis stops here"),
+        L("     │"),
+        L("     ▼"),
+        L("  [3] PARAMETRIC MODEL ──── calibrate from substrate → run simulation"),
+        L("     │"),
+        L("     ▼"),
+        L("  [4] RIPPLE CASCADE ─── downstream models auto-triggered by graph"),
+        L("     │"),
+        L("     ▼"),
+        L("  Answer  ·  layer header self-documents which layers fired:"),
+        L(),
+        L("  [SUBSTRATE: tables queried]"),
+        L("  [DERIVED: EnrichedTransaction]              ← omitted if unused"),
+        L("  [MODEL: ChannelMixModel | RIPPLE: LabourModel, ThroughputModel]"),
+        L(),
+        f"╚{'═' * W}╝",
+    ]
+    print("\n".join(rows))
+
+
 def _print_result(result):
     cols = result["columns"]
     rows = result["rows"]
@@ -202,7 +321,9 @@ if __name__ == "__main__":
             print("Usage: python tools/kfc_tools.py sql 'SELECT ...'")
             sys.exit(1)
         _print_result(run_sql(args[1]))
+    elif cmd in ("architecture", "arch"):
+        show_architecture()
     else:
         print(f"Unknown command: {cmd}")
-        print("Commands: schema, stores, sample, sql")
+        print("Commands: schema, stores, sample, sql, architecture")
         sys.exit(1)

@@ -141,6 +141,67 @@ ChannelMixModel → LabourModel + ThroughputModel ripple.
 WasteRecoveryModel. Pull inventory_movements for current compliance rates
 by store, feed as calibrated inputs.
 
+## Layer Header — Required on Every Analytical Response
+
+Every analytical response MUST open with a layer header on its own line before
+any prose or numbers. The header self-documents which parts of the architecture
+produced the answer. Format:
+
+```
+[SUBSTRATE: table1, table2]
+[DERIVED: DerivedObjectName]
+[MODEL: PrimaryModelName | RIPPLE: DownstreamModel1, DownstreamModel2]
+```
+
+Rules:
+- Always include `[SUBSTRATE: ...]` — list every table actually queried.
+- Include `[DERIVED: ...]` only when a derived join was used (EnrichedTransaction,
+  ChannelMargin, OperatorPerformance, HourlyDemand, WasteAttribution, ExposureForecast).
+  Omit the line entirely if no derived object was needed.
+- Include `[MODEL: ... | RIPPLE: ...]` only when a parametric model ran.
+  Omit the line entirely for pure substrate/derived answers.
+- The header is the first thing Ahsan sees — it orients the room to which layer
+  is speaking before the numbers land.
+
+Examples:
+
+Pure substrate query:
+```
+[SUBSTRATE: pos_transactions, store_summary]
+```
+
+Substrate + derived join:
+```
+[SUBSTRATE: pos_transactions, prism_observations]
+[DERIVED: EnrichedTransaction]
+```
+
+Full simulation:
+```
+[SUBSTRATE: pos_transactions, inventory_movements]
+[DERIVED: WasteAttribution]
+[MODEL: WasteRecoveryModel]
+```
+
+Ripple chain:
+```
+[SUBSTRATE: pos_transactions]
+[DERIVED: HourlyDemand]
+[MODEL: ChannelMixModel | RIPPLE: LabourModel, ThroughputModel]
+```
+
+## Architecture on Demand
+
+When the user types **"show architecture"** or **"what's in the system"**, call
+`show_architecture()` from `tools/kfc_tools.py`. This prints the full ASCII
+ontology map with live row counts. Do this before any other response when those
+phrases appear.
+
+```python
+from tools.kfc_tools import show_architecture
+show_architecture()
+```
+
 ## Output Style — Parametric Responses
 
 Structure every simulation response as:
